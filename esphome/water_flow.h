@@ -4,7 +4,7 @@ class WaterFlowSensor : public Component, public CustomAPIDevice {
  public:
 
   /** USER SPECIFIC SETTINGS **/
-  const int PIN_NUMBER = 7; // Pin number to detect pulses on
+  const int PIN_NUMBER = 12; // Pin number to detect pulses on
   double USAGE_PER_PULSE = 27.6; // Amount of pulses that must flow for the water sensor to send one Liter or Gallon
   const double MINIMUM_FLOW_RATE = .01; // .01 Minimum flow rate (in Gallons or Liters per minute) that the flow sensor can recognize. Technically, the slowest consistent flow that the EKM HD meter can read is .22 gal/min. But mine was able to read a flow as slow as .08 gal/min fairly consistently (pulse every ~55 seconds: (60 / (.08/0.075) ).
   const double MAXIMUM_FLOW_RATE = 20;

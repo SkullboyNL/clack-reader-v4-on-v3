@@ -200,6 +200,12 @@ script:
 ###  On reboot or powerloss of the esp, set the time left, last regeneration time, and capacity counters
   - id: on_boot
     then:
+      - light.turn_on:
+          id: led
+          effect: Slow Pulse
+          red: 100%
+          green: 60%
+          blue: 0%    
       - component.update: clack_saltfill_last  # add old date to dashboard when boot
       - component.update: clack_resinclean_last # add old date to dashboard when boot
       - component.update: clack_regeneration_last # add old date to dashboard when boot
@@ -224,7 +230,27 @@ script:
       - component.update: clack_total_run_time
 ##      - lambda: 'id(wait_on_delay) = false;'
 ##      - lambda: 'id(water_meter_freeze) = false;'
-
+      - wait_until:
+          condition:
+            wifi.connected:
+      - light.turn_on:
+          id: led
+          effect: Slow Pulse
+          red: 0%
+          green: 0%
+          blue: 100%
+      - wait_until:
+          condition:
+            api.connected:
+      - light.turn_on:
+          id: led
+          effect: none
+          red: 0%
+          green: 100%
+          blue: 0%
+      - delay: 5s
+      - light.turn_off:
+          id: led
   - id: recalculate
     then:
       - sensor.template.publish:
@@ -993,7 +1019,25 @@ script:
                                     lambda: 'return id(clack_select_cycle).state == "${clack_post_fill_2nd_backwash}";'
                                   then:
                                     - script.execute: cycle_steps_5cycle_post  # backwash/brine/backwash2/rinse/fill
-
+                                    
+light:
+#G47=RGB WS2812C-2020
+  - platform: esp32_rmt_led_strip
+    name: ${name} Led
+    id: led
+    rgb_order: RGB
+    pin: 47
+    num_leds: 4
+    # RMT 0 channels will be occupied by IR
+    rmt_channel: 1
+    chipset: ws2812
+    restore_mode: ALWAYS_OFF
+    effects:
+      - pulse:
+      - pulse:
+          name: "Slow Pulse"
+          transition_length: 500ms
+          update_interval: 1s
 interval:
   - interval: 1s
     then:
@@ -1080,98 +1124,82 @@ button:
 #-----------
 sensor:
   ##
-  # Power meter - ch1- clack pcb / ch2- Atom s3 lite esp / ch3- chlorinator
-  - platform: ina3221
-    address: 0x41  #A0-VCC
-    channel_1:
-      shunt_resistance: 0.1 ohm
-      power:
-        id: ch1_power
-        name: ch1_power
-        internal: true
-        filters:
-          - lambda: |-
-              if (isnan(x)) {
-                return 0;
-              } else {
-                return x;
-              }
-          - or:
-            - delta: 0.4
-            - median:
-                window_size: 7
-                send_every: 4
-                send_first_at: 3
-          - round: 1
-        on_value:
-          - component.update: clack_power  #template sensor
-        on_value_range:
-          - above: 1.0
-            then:
-              - script.execute: decide_cycle  #choose what regeneration cycle to run
-      bus_voltage:
-        id: ch1_voltage #Voltage ch1 - 2 - 3 are the same
-        internal: true
-        filters:
-          - lambda: |-
-              if (isnan(x)) {
-                return 0;
-              } else {
-                return x;
-              }
-          - median:
-              window_size: 7
-              send_every: 4
-              send_first_at: 3
-          - delta: 0.1
-          - round: 1
-        on_value:
-          then:
-            - component.update: clack_voltage  #template sensor
-
-    channel_2:
-      shunt_resistance: 0.1 ohm
-      power:
-        id: ch2_power
-        internal: true
-        filters:
-          - lambda: |-
-              if (isnan(x)) {
-                return 0;
-              } else {
-                return x;
-              }
-          - median:
-              window_size: 7
-              send_every: 4
-              send_first_at: 3
-          - delta: 0.1
-          - round: 1
-        on_value:
-          - component.update: clack_power_esp  #template sensor
-
-    channel_3:
-      shunt_resistance: 0.1 ohm
-      power:
-        id: ch3_power
-        internal: true
-        filters:
-          - lambda: |-
-              if (isnan(x)) {
-                return 0;
-              } else {
-                return x;
-              }
-          - median:
-              window_size: 7
-              send_every: 4
-              send_first_at: 3
-          - delta: 0.2
-          - round: 1
-        on_value:
-          - component.update: clack_power_chlorinator  #template sensor          
+  # Power meter - ch1- clack pcb  / ch3- chlorinator
+  - platform: ina219
+    address: 0x40
+    shunt_resistance: 0.1 ohm
+    power:
+      id: ch3_power
+      internal: true
+      filters:
+        - lambda: |-
+            if (isnan(x)) {
+              return 0;
+            } else {
+              return x;
+            }
+        - median:
+            window_size: 7
+            send_every: 4
+            send_first_at: 3
+        - delta: 0.2
+        - round: 1
+      on_value:
+        - component.update: clack_power_chlorinator  #template sensor   
+    max_voltage: 32.0V
+    max_current: 3.2A
     update_interval: 1s
-
+    
+  # Power meter - clack pcb 
+  - platform: ina219
+    address: 0x41
+    shunt_resistance: 0.1 ohm
+    power:
+      id: ch1_power
+      name: ch1_power
+      internal: true
+      filters:
+        - lambda: |-
+            if (isnan(x)) {
+              return 0;
+            } else {
+              return x;
+            }
+        - or:
+          - delta: 0.4
+          - median:
+              window_size: 7
+              send_every: 4
+              send_first_at: 3
+        - round: 1
+      on_value:
+        - component.update: clack_power  #template sensor
+      on_value_range:
+        - above: 1.0
+          then:
+            - script.execute: decide_cycle  #choose what regeneration cycle to run  
+    bus_voltage:
+      id: ch1_voltage #Voltage same for both chips
+      internal: true
+      filters:
+        - lambda: |-
+            if (isnan(x)) {
+              return 0;
+            } else {
+              return x;
+            }
+        - median:
+            window_size: 7
+            send_every: 4
+            send_first_at: 3
+        - delta: 0.1
+        - round: 1
+      on_value:
+        then:
+          - component.update: clack_voltage  #template sensor
+    max_voltage: 32.0V
+    max_current: 3.2A
+    update_interval: 1s
   ##
   # TOF distance sensor.
   - platform: template
@@ -1234,18 +1262,6 @@ sensor:
     update_interval: never
     lambda: |-
       return id(ch1_power).state;
-
-  - platform: template
-    id: clack_power_esp
-    name: ${clack_power_esp}
-    icon: mdi:flash
-    unit_of_measurement: W
-    accuracy_decimals: 1
-    device_class: power
-    state_class: measurement
-    update_interval: never
-    lambda: |-
-      return id(ch2_power).state;
 
   - platform: template
     id: clack_power_chlorinator
